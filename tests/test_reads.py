@@ -255,3 +255,20 @@ def test_missing_role_flags_fail_closed():
     with pytest.raises(GradescopeError) as caught:
         submission(raw)
     assert caught.value.code == "student_access_required"
+
+
+def test_pending_regrade_does_not_expose_unpublished_staff_reply():
+    raw = copy.deepcopy(RAW)
+    request = {
+        "id": 70,
+        "student_comment": "My request",
+        "staff_comment": "Draft reply",
+        "completed": False,
+        "updated_at": "2026-09-23T12:00:00Z",
+    }
+    raw["regrade_requests"] = [request]
+    result = submission(raw)["regrade_requests"][0]
+    assert result["student_comment"] == "My request"
+    assert "staff_comment" not in result and "updated_at" not in result
+    request["completed"] = True
+    assert submission(raw)["regrade_requests"][0]["staff_comment"] == "Draft reply"

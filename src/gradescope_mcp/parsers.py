@@ -209,6 +209,23 @@ def autograder(data):
     return result
 
 
+def regrade_request(data):
+    result = select(
+        data,
+        (
+            "id",
+            "student_comment",
+            "completed",
+            "created_at",
+            "assignment_id",
+            "question_submission_id",
+        ),
+    )
+    if data.get("completed") is True:
+        result.update(select(data, ("staff_comment", "updated_at")))
+    return result
+
+
 def submission(data):
     if not isinstance(data, dict) or not all(
         k in data for k in ("assignment", "assignment_submission", "current_user", "grades_visible")
@@ -271,7 +288,9 @@ def submission(data):
         "submission": own,
         "grades_visible": visible,
         "questions": questions,
-        "regrade_requests": data.get("regrade_requests", []) if visible else [],
+        "regrade_requests": [regrade_request(r) for r in data.get("regrade_requests", [])]
+        if visible
+        else [],
         "members": members,
         "autograder_results": autograder(data.get("autograder_results")),
         "pdf_attachment": data.get("pdf_attachment"),

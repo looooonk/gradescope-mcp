@@ -50,6 +50,8 @@ The viewer additionally gates `stdout` on `stdout_shown_to_students`, reference 
 on `show_answers`, and explanation components on `show_answers` or
 `show_explanations_after_correct`. The parser applies those gates separately from your own saved
 answers. Rubric items honor the assignment's all/applied/hidden visibility setting.
+Regrade staff replies and review timestamps appear only after `completed` is true, matching
+the viewer's conversation component.
 
 Original files come only from source metadata pointing at the Gradescope production uploads
 S3 bucket under reviewed `/uploads/{pdf_attachment,image_attachment,page,text_file}/file/` paths.

@@ -4,9 +4,10 @@ Verified on September 23, 2026, on the local macOS checkout with Python 3.12.
 
 ## Offline checks
 
-`make check` passes Ruff lint/format checks and **41 tests**. Coverage includes rejected routes
+`make check` passes Ruff lint/format checks and **42 tests**. Coverage includes rejected routes
 before network access, login secrets in form bodies, session renewal, student ownership, attempt
-discovery, hidden grades/reference answers/autograder debug output, rubric visibility, timed
+discovery, hidden grades/reference answers/autograder debug output, unpublished regrade replies,
+rubric visibility, timed
 placeholders, parser failures, pagination, logging redaction/rotation, storage host/path
 restrictions, cookie-free downloads, blocked redirects, and bounded text/image decoding.
 

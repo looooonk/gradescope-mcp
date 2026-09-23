@@ -16,9 +16,8 @@ TOOL_NAMES = {
     "gradescope_describe_operation",
     "gradescope_read",
     "gradescope_read_text",
-    "gradescope_search_threads",
-    "gradescope_list_attachments",
-    "gradescope_read_attachment",
+    "gradescope_list_files",
+    "gradescope_read_file",
     "gradescope_read_image",
 }
 
@@ -85,6 +84,11 @@ class LoggedMCP(FastMCP):
         from mcp.server.fastmcp.exceptions import ToolError
 
         try:
+            tool = self._tool_manager.get_tool(name)
+            if tool and isinstance(arguments, dict):
+                allowed = set(tool.parameters.get("properties", {}))
+                if set(arguments) - allowed:
+                    raise GradescopeError("Unexpected tool arguments; inspect the tool schema.")
             async with asyncio.timeout(55):
                 return await super().call_tool(name, arguments)
         except Exception as error:

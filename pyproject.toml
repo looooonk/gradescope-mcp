@@ -12,6 +12,7 @@ dependencies = [
   "pypdf>=6,<7",
   "defusedxml>=0.7,<1",
   "pillow>=11,<13",
+  "psutil>=7,<9",
 ]
 
 [project.scripts]

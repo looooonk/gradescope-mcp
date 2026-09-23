@@ -168,13 +168,19 @@ async def extract(body, filename, mime, *, image=False):
     )
 
     async def monitor():
-        worker = psutil.Process(process.pid)
+        try:
+            worker = psutil.Process(process.pid)
+        except psutil.NoSuchProcess:
+            return
         while process.returncode is None:
             try:
                 if worker.memory_info().rss > 512 * 1024 * 1024:
                     process.kill()
                     return
             except psutil.NoSuchProcess:
+                return
+            except psutil.Error:
+                process.kill()
                 return
             await asyncio.sleep(0.1)
 

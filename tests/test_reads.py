@@ -181,7 +181,11 @@ def test_parsers_preserve_unknown_scores_and_unavailable_assignments():
     with pytest.raises(GradescopeError):
         courses("<html>Changed structure</html>")
     with pytest.raises(GradescopeError):
+        courses('<div id="account-show"></div>')
+    with pytest.raises(GradescopeError):
         assignments(COURSE, "999")
+    with pytest.raises(GradescopeError):
+        assignments(COURSE.replace("<th>", "<td>").replace("</th>", "</td>"), "10")
 
 
 def test_unpublished_scores_are_omitted_and_timed_placeholders_blocked():
@@ -195,3 +199,59 @@ def test_unpublished_scores_are_omitted_and_timed_placeholders_blocked():
     with pytest.raises(GradescopeError) as caught:
         submission(raw)
     assert caught.value.code == "timed_assignment"
+
+
+def test_hidden_reference_answers_do_not_hide_own_answers():
+    raw = copy.deepcopy(RAW)
+    raw["questions"][0]["content"] = [
+        {"type": "text", "value": "Prompt"},
+        {"type": "text_input", "answer": "Reference answer"},
+        {"type": "radio_input", "choices": [{"value": "Choice", "answer": True}]},
+        {"type": "explanation", "value": "Hidden explanation"},
+    ]
+    raw["question_submissions"][0]["answers"] = {"0": "Own answer"}
+    question = submission(raw)["questions"][0]
+    assert len(question["content"]) == 3
+    assert "answer" not in question["content"][1]
+    assert "answer" not in question["content"][2]["choices"][0]
+    assert question["submission"]["answers"] == {"0": "Own answer"}
+    raw["assignment"]["show_explanations_after_correct"] = True
+    question = submission(raw)["questions"][0]
+    assert len(question["content"]) == 4 and "answer" not in question["content"][1]
+    raw["assignment"]["show_answers"] = True
+    assert submission(raw)["questions"][0]["content"] == raw["questions"][0]["content"]
+
+
+def test_rubric_and_debug_output_follow_student_visibility():
+    raw = copy.deepcopy(RAW)
+    raw["rubric_items"] = [
+        {"question_id": 40, "present": True, "group_id": 60},
+        {"question_id": 40, "present": False, "group_id": 61},
+    ]
+    raw["rubric_item_groups"] = [{"question_id": 40, "id": 60}, {"question_id": 40, "id": 61}]
+    raw["autograder_results"] = {
+        "output": "Visible student output",
+        "stdout": "Staff diagnostics",
+        "stdout_shown_to_students": False,
+    }
+    raw["assignment"]["rubric_visibility_setting"] = "show_only_applied_rubric_items"
+    result = submission(raw)
+    assert len(result["questions"][0]["rubric_items"]) == 1
+    assert len(result["questions"][0]["rubric_groups"]) == 1
+    assert result["autograder_results"]["output"] == "Visible student output"
+    assert "stdout" not in result["autograder_results"]
+    raw["assignment"]["rubric_visibility_setting"] = "hide_all_rubric_items"
+    assert submission(raw)["questions"][0]["rubric_items"] == []
+    raw["assignment"]["rubric_visibility_setting"] = "show_all_rubric_items"
+    raw["autograder_results"]["stdout_shown_to_students"] = True
+    result = submission(raw)
+    assert len(result["questions"][0]["rubric_items"]) == 2
+    assert result["autograder_results"]["stdout"] == "Staff diagnostics"
+
+
+def test_missing_role_flags_fail_closed():
+    raw = copy.deepcopy(RAW)
+    raw["current_user"].pop("is_instructor")
+    with pytest.raises(GradescopeError) as caught:
+        submission(raw)
+    assert caught.value.code == "student_access_required"

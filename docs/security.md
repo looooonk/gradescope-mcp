@@ -17,6 +17,8 @@ Course discovery limits access to enrolled student courses. Submission IDs must 
 from the course list or the linked submission's attempt history. Returned IDs and ownership
 are checked before exposing data. Staff/admin views, timed-start placeholders, action paths,
 and nonmember roster data are excluded. Published-score and prior-score flags are respected.
+Hidden autograder debug output, unreleased reference answers/explanations, and hidden/unapplied
+rubric items are filtered according to the student's visibility flags.
 
 ## Side-effect audit limits
 

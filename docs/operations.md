@@ -46,6 +46,10 @@ IDs must first appear in the student's course list or current submission's histo
 The server confirms returned assignment/submission IDs and ownership. Timed-start utility
 submissions and staff views are rejected. Hidden final scores/rubrics/comments are omitted.
 Immediate autograder results are distinct from final grade release and may be available earlier.
+The viewer additionally gates `stdout` on `stdout_shown_to_students`, reference `answer` fields
+on `show_answers`, and explanation components on `show_answers` or
+`show_explanations_after_correct`. The parser applies those gates separately from your own saved
+answers. Rubric items honor the assignment's all/applied/hidden visibility setting.
 
 Original files come only from source metadata pointing at the Gradescope production uploads
 S3 bucket under reviewed `/uploads/{pdf_attachment,image_attachment,page,text_file}/file/` paths.

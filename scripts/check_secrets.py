@@ -25,7 +25,7 @@ def main():
     secrets = set()
     for key in ("GRADESCOPE_EMAIL", "GRADESCOPE_PASSWORD"):
         value = values.get(key)
-        if value and len(value) >= 4:
+        if value:
             secrets.update(
                 s.encode()
                 for s in (value, quote(value), quote_plus(value), json.dumps(value)[1:-1])

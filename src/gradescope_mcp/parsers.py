@@ -25,7 +25,7 @@ def select(data, keys):
 def courses(html):
     soup = BeautifulSoup(html, "html.parser")
     root = soup.select_one("#account-show")
-    if root is None:
+    if root is None or root.select_one(".courseList") is None:
         raise parse_error()
     result = []
     seen = set()
@@ -75,7 +75,9 @@ def assignments(html, course_id):
         header = row.find("th")
         cells = row.find_all("td", recursive=False)
         if not header:
-            continue
+            if row.select_one("td.dataTables_empty"):
+                continue
+            raise parse_error()
         if not cells:
             raise parse_error()
         link = header.find("a", href=True)
@@ -152,6 +154,7 @@ ASSIGNMENT_KEYS = (
     "enforce_time_limit",
     "timezone",
     "show_answers",
+    "show_explanations_after_correct",
     "show_old_submission_scores",
     "template_url",
     "rubric_visibility_setting",
@@ -181,12 +184,37 @@ QUESTION_KEYS = (
 )
 
 
+def question_content(value, *, answers, explanations):
+    if isinstance(value, list):
+        return [
+            question_content(item, answers=answers, explanations=explanations)
+            for item in value
+            if explanations or not isinstance(item, dict) or item.get("type") != "explanation"
+        ]
+    if isinstance(value, dict):
+        return {
+            key: question_content(item, answers=answers, explanations=explanations)
+            for key, item in value.items()
+            if answers or key != "answer"
+        }
+    return value
+
+
+def autograder(data):
+    if data is None:
+        return None
+    result = dict(data)
+    if result.get("stdout_shown_to_students") is not True:
+        result.pop("stdout", None)
+    return result
+
+
 def submission(data):
     if not isinstance(data, dict) or not all(
         k in data for k in ("assignment", "assignment_submission", "current_user", "grades_visible")
     ):
         raise parse_error()
-    if data["current_user"].get("is_instructor") or data["current_user"].get("is_admin"):
+    if any(data["current_user"].get(k) is not False for k in ("is_instructor", "is_admin")):
         raise GradescopeError(
             "Submission reads require the student's own view.", "student_access_required"
         )
@@ -196,6 +224,10 @@ def submission(data):
             "timed_assignment",
         )
     visible = data["grades_visible"] is True
+    assignment = data["assignment"]
+    show_answers = assignment.get("show_answers") is True
+    show_explanations = show_answers or assignment.get("show_explanations_after_correct") is True
+    rubric_visibility = assignment.get("rubric_visibility_setting")
     own = select(data["assignment_submission"], SUBMISSION_KEYS)
     if not visible:
         own.pop("score", None)
@@ -203,15 +235,29 @@ def submission(data):
     answers = {q["question_id"]: q for q in data.get("question_submissions", [])}
     for raw in data.get("questions", []):
         item = select(raw, QUESTION_KEYS)
+        if "content" in item:
+            item["content"] = question_content(
+                item["content"], answers=show_answers, explanations=show_explanations
+            )
         answer = answers.get(raw["id"], {})
         item["submission"] = select(answer, ("id", "data", "answers"))
         if visible:
             item["submission"].update(select(answer, ("score", "evaluations", "annotations")))
             item["rubric_items"] = [
-                r for r in data.get("rubric_items", []) if r.get("question_id") == raw["id"]
+                r
+                for r in data.get("rubric_items", [])
+                if r.get("question_id") == raw["id"]
+                and (
+                    rubric_visibility == "show_all_rubric_items"
+                    or rubric_visibility == "show_only_applied_rubric_items"
+                    and r.get("present") is True
+                )
             ]
+            group_ids = {r.get("group_id") for r in item["rubric_items"]}
             item["rubric_groups"] = [
-                r for r in data.get("rubric_item_groups", []) if r.get("question_id") == raw["id"]
+                r
+                for r in data.get("rubric_item_groups", [])
+                if r.get("question_id") == raw["id"] and r.get("id") in group_ids
             ]
         questions.append(item)
     owners = {o.get("user_id"): o for o in data.get("ownerships", [])}
@@ -227,7 +273,7 @@ def submission(data):
         "questions": questions,
         "regrade_requests": data.get("regrade_requests", []) if visible else [],
         "members": members,
-        "autograder_results": data.get("autograder_results"),
+        "autograder_results": autograder(data.get("autograder_results")),
         "pdf_attachment": data.get("pdf_attachment"),
         "image_attachments": data.get("image_attachments", []),
         "text_files": data.get("text_files", []),

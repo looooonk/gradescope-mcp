@@ -143,5 +143,20 @@ async def test_tool_pagination_and_text_slices(tmp_path):
     assert text_slice("abcdef", 1, 2)["text"] == "bc"
 
 
+async def test_field_selection_is_rooted_after_pagination_and_missing_fields_fail(tmp_path):
+    server = create_server(Settings("test@example.test", "secret"), tmp_path, client=Stub())
+    _, result = await server.call_tool(
+        "gradescope_read",
+        {"operation": "courses", "offset": 1, "limit": 1, "fields": ["courses.0.id"]},
+    )
+    assert result["data"] == {"courses.0.id": "1"}
+    assert result["pagination"]["next_offset"] == 2
+    with pytest.raises(ToolError) as caught:
+        await server.call_tool("gradescope_read", {"operation": "courses", "fields": ["private"]})
+    message = str(caught.value)
+    assert "data root" in message and "courses.0.id" in message and "Omit fields" in message
+    assert "private" not in message
+
+
 def test_untrusted_links_are_not_generic_download_targets():
     assert attachment_items({"text_files": [{"url": "https://example.test/", "path": "bad"}]}) == []

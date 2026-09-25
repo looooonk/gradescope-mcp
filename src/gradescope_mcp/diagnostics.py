@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
+from pydantic import ValidationError
 
 from gradescope_mcp.catalog import OPERATIONS, GradescopeError
 
@@ -22,21 +24,58 @@ TOOL_NAMES = {
 }
 
 
+def error_cause(error):
+    seen = set()
+    while id(error) not in seen:
+        seen.add(id(error))
+        if isinstance(error, BaseExceptionGroup) and error.exceptions:
+            error = error.exceptions[0]
+        elif error.__cause__ is not None:
+            error = error.__cause__
+        else:
+            break
+    return error
+
+
+def schema_hint(schema):
+    if "anyOf" in schema:
+        return " or ".join(schema_hint(option) for option in schema["anyOf"])
+    kind = schema.get("type", "value")
+    if kind == "array":
+        kind += " of " + schema_hint(schema.get("items", {}))
+    bounds = [
+        f"{label} {schema[key]}"
+        for key, label in (
+            ("minimum", "minimum"),
+            ("maximum", "maximum"),
+            ("minLength", "minimum length"),
+            ("maxLength", "maximum length"),
+            ("pattern", "pattern"),
+        )
+        if key in schema
+    ]
+    return kind + (f" ({', '.join(bounds)})" if bounds else "")
+
+
+def validation_message(error, properties):
+    # Only schema-owned field names and constraints may enter the returned error.
+    fields = {}
+    for detail in error.errors(include_input=False, include_context=False, include_url=False):
+        location = detail["loc"]
+        name = location[0] if location else None
+        if name in properties and name not in fields:
+            required = "required; " if detail["type"] == "missing" else ""
+            fields[name] = f"{name}: {required}{schema_hint(properties[name])}"
+    hints = "; ".join(list(fields.values())[:5]) or "values must match the tool schema"
+    return f"Invalid arguments. {hints}. Inspect the tool schema and retry."
+
+
 class ErrorLog:
     def __init__(self, directory: Path, max_bytes: int = 1024 * 1024, backups: int = 3):
         self.directory, self.max_bytes, self.backups = directory, max_bytes, backups
 
     def record(self, event: str, error: Exception, *, tool=None, operation=None):
-        cause = error
-        seen = set()
-        while id(cause) not in seen:
-            seen.add(id(cause))
-            if isinstance(cause, BaseExceptionGroup) and cause.exceptions:
-                cause = cause.exceptions[0]
-            elif cause.__cause__ is not None:
-                cause = cause.__cause__
-            else:
-                break
+        cause = error_cause(error)
         record = {
             "time": datetime.now(UTC).isoformat(),
             "event": event,
@@ -46,7 +85,11 @@ class ErrorLog:
             "operation": operation
             if isinstance(operation, str) and operation in OPERATIONS
             else None,
-            "code": cause.code if isinstance(cause, GradescopeError) else "tool_or_runtime_error",
+            "code": cause.code
+            if isinstance(cause, GradescopeError)
+            else "invalid_arguments"
+            if isinstance(cause, ValidationError)
+            else "tool_or_runtime_error",
             "http_status": cause.http_status if isinstance(cause, GradescopeError) else None,
             "frames": [
                 {"file": Path(frame.filename).name, "line": frame.lineno, "function": frame.name}
@@ -81,8 +124,6 @@ class LoggedMCP(FastMCP):
         super().__init__(*args, **kwargs)
 
     async def call_tool(self, name, arguments):
-        from mcp.server.fastmcp.exceptions import ToolError
-
         try:
             tool = self._tool_manager.get_tool(name)
             if tool and isinstance(arguments, dict):
@@ -94,22 +135,17 @@ class LoggedMCP(FastMCP):
         except Exception as error:
             operation = arguments.get("operation") if isinstance(arguments, dict) else None
             self.error_log.record("tool_failure", error, tool=name, operation=operation)
-            cause = error
-            while cause.__cause__ is not None:
-                cause = cause.__cause__
-            message = (
-                str(cause)
-                if isinstance(cause, GradescopeError)
-                else (
-                    "Gradescope tool failed or arguments were invalid. Inspect the tool schema; "
-                    "safe diagnostics are in .local/logs/gradescope-mcp.jsonl."
-                )
-            )
+            cause = error_cause(error)
+            tool = self._tool_manager.get_tool(name)
+            if isinstance(cause, GradescopeError):
+                message = str(cause)
+            elif isinstance(cause, ValidationError) and tool:
+                message = validation_message(cause, tool.parameters.get("properties", {}))
+            else:
+                message = "Gradescope tool failed; see the local diagnostic log."
             raise ToolError(message) from None
 
     async def read_resource(self, uri):
-        from mcp.server.fastmcp.exceptions import ToolError
-
         try:
             return await super().read_resource(uri)
         except Exception as error:

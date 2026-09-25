@@ -65,7 +65,11 @@ def field_value(data, field):
             )
         return value
     except (KeyError, TypeError, IndexError, ValueError):
-        raise GradescopeError("Field was not found in the returned data.") from None
+        raise GradescopeError(
+            "Field was not found. fields selects dotted paths from the data root, not each "
+            "list item. For courses use ['courses'] or ['courses.0.id']; for submission use "
+            "['assignment.title']. Omit fields and use a small limit to inspect the structure."
+        ) from None
 
 
 def validate_output_args(offset, limit, fields):
@@ -125,6 +129,10 @@ def create_server(settings, log_dir, *, client=None):
     ) -> dict[str, Any]:
         """Read a named operation. Follow next_offset for lists. fields selects dotted fields.
 
+        Paths start at the data root: courses uses ['courses'] or ['courses.0.id']; submission
+        uses ['assignment.title', 'grades_visible']. Selection runs after pagination and does
+        not project over each list item. Output keys keep the dotted paths. Missing fields fail;
+        omit fields and use a small limit to inspect the structure first.
         IDs are strings or integers. path accepts only the described keys. No arbitrary endpoints.
         For unstarted assignments only course-list metadata is available. Grades may be null.
         """
@@ -235,15 +243,16 @@ def create_server(settings, log_dir, *, client=None):
 def main():
     os.umask(0o077)
     logging.disable(logging.CRITICAL)
-    log_dir = ROOT / ".local/logs"
     parser = argparse.ArgumentParser(description="Local read-only Gradescope MCP (stdio)")
     parser.add_argument("--env-file", type=Path, default=ROOT / ".env")
+    parser.add_argument("--log-dir", type=Path, default=ROOT / ".local/logs")
     args = parser.parse_args()
+    log_dir = args.log_dir
     try:
         create_server(Settings.load(args.env_file), log_dir).run(transport="stdio")
     except Exception as error:
         ErrorLog(log_dir).record("server_failure", error)
-        parser.exit(1, "Gradescope MCP failed; see .local/logs/gradescope-mcp.jsonl.\n")
+        parser.exit(1, "Gradescope MCP failed; see the local diagnostic log.\n")
 
 
 if __name__ == "__main__":

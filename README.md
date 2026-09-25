@@ -119,3 +119,16 @@ runs offline checks and rejects private artifacts/configured credentials in stag
 files. Work directly on main with small commits; no GitHub Actions are configured.
 
 See [verification notes](docs/verification.md) for tested coverage and remaining limits.
+
+## Validation and verification diagnostics
+
+Verification runs write their MCP diagnostics to ignored `.local/verification/logs/`,
+separately from operational `.local/logs/`. Existing historical logs are retained.
+The `--log-dir` server option selects the diagnostic directory for a launched process.
+Validation errors report schema field names and constraints without echoing input values.
+
+`gradescope_read.fields` selects paths from the `data` root after pagination, not
+from every list item. For example, use `["courses"]` for the course list or
+`["courses.0.id"]` for the first course ID on that page. For `submission`, use
+`["assignment.title", "grades_visible"]`. Returned keys retain the dotted paths.
+Missing fields remain errors; omit `fields` and use a small `limit` to inspect data.

@@ -119,7 +119,8 @@ def main():
         "-c",
         "mcp_servers.gradescope.command=" + json.dumps(server["command"]),
         "-c",
-        "mcp_servers.gradescope.args=" + json.dumps(server.get("args", [])),
+        "mcp_servers.gradescope.args="
+        + json.dumps(server.get("args", []) + ["--log-dir", str(LOCAL / "verification/logs")]),
         "--output-schema",
         str(schema),
         "--output-last-message",
@@ -186,7 +187,7 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        ErrorLog(LOCAL / "logs").record("codex_verification_failure", error)
+        ErrorLog(LOCAL / "verification/logs").record("codex_verification_failure", error)
         raise SystemExit(
             "Codex verification failed; see safe local diagnostics. Private values withheld."
         ) from None

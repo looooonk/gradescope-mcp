@@ -4,7 +4,7 @@ Verified on September 23, 2026, on the local macOS checkout with Python 3.12.
 
 ## Offline checks
 
-`make check` passes Ruff lint/format checks and **42 tests**. Coverage includes rejected routes
+`make check` passes Ruff lint/format checks and **46 tests**. Coverage includes rejected routes
 before network access, login secrets in form bodies, session renewal, student ownership, attempt
 discovery, hidden grades/reference answers/autograder debug output, unpublished regrade replies,
 rubric visibility, timed
@@ -57,3 +57,14 @@ No course/account mutation or generated export endpoint was exercised. Gradescop
 not public: JSON-read view counting could not be independently measured from a student's
 session. See [security and audit limits](security.md). The unsupported private HTML/JSON
 interface may require maintenance after website changes.
+
+## Diagnostic isolation
+
+Both verification scripts pass `--log-dir .local/verification/logs` as an absolute
+path to the MCP process. Deliberately invalid requests and live verification errors
+stay there; normal Codex sessions continue to use `.local/logs/`. Historical logs
+are not rewritten. Run the Codex check with `--model gpt-6-luna`.
+
+The September 25, 2026 fresh GPT-6 Luna check passed with 19 MCP calls,
+using the command registered in Codex. Offline checks passed with
+46 tests. Operational log contents remained unchanged throughout verification.

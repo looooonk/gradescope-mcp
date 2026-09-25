@@ -26,7 +26,12 @@ async def main():
     summary = {"transport": "stdio", "outside_repository_cwd": True}
     server = StdioServerParameters(
         command=str(ROOT / ".venv/bin/gradescope-mcp"),
-        args=["--env-file", str(ROOT / ".env")],
+        args=[
+            "--env-file",
+            str(ROOT / ".env"),
+            "--log-dir",
+            str(ROOT / ".local/verification/logs"),
+        ],
         cwd=str(work),
         env={"PATH": os.defpath},
     )
@@ -65,6 +70,21 @@ async def main():
                 offset = page["pagination"]["next_offset"]
             expected["course_count"] = len(courses)
             summary["course_pagination"] = "verified"
+            selected = await read("courses", limit=1, fields=["courses.0.id"])
+            assert selected["data"]["courses.0.id"] == courses[0]["id"]
+            invalid_fields = await session.call_tool(
+                "gradescope_read", {"operation": "courses", "limit": 1, "fields": ["id"]}
+            )
+            assert invalid_fields.isError
+            message = " ".join(c.text for c in invalid_fields.content if c.type == "text")
+            assert "data root" in message and "courses.0.id" in message
+            invalid_limit = await session.call_tool(
+                "gradescope_read", {"operation": "courses", "limit": 101}
+            )
+            assert invalid_limit.isError
+            message = " ".join(c.text for c in invalid_limit.content if c.type == "text")
+            assert "maximum 100" in message
+            summary["field_selection_and_validation"] = "verified"
             candidates = []
             for course in [c for c in courses if c["role"] == "student"][:12]:
                 path = {"course_id": course["id"]}
@@ -191,7 +211,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except Exception as error:
-        ErrorLog(LOCAL / "logs").record("live_verification_failure", error)
+        ErrorLog(LOCAL / "verification/logs").record("live_verification_failure", error)
         raise SystemExit(
             "Live verification failed; see safe local diagnostics. Private values withheld."
         ) from None

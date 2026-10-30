@@ -7,15 +7,15 @@ read `.env` can use the account separately. No credential is embedded in Codex c
 ## Request boundary
 
 Tool schemas and the operation catalog validate inputs before requests, including login.
-A second transport allowlist admits only GET `/`, `/account`, `/account/edit`, student course
-pages and discovered submission JSON. The sole POST is `/login` with form-body credentials.
+A second transport allowlist admits only GET `/`, `/account`, `/account/edit`, course
+pages, discovered staff regrade indices, and discovered submission JSON. The sole POST is `/login` with form-body credentials.
 There is no raw HTTP tool. API redirects are rejected, except recognizing login redirects to
 renew a session once. Login redirects are validated and the next request is constructed locally.
 Cookies are held in memory; closing the client does not call the state-changing logout route.
 
-Course discovery limits access to enrolled student courses. Submission IDs must be discovered
+Student operations require enrolled student courses. Submission IDs must be discovered
 from the course list or the linked submission's attempt history. Returned IDs and ownership
-are checked before exposing data. Staff/admin views, timed-start placeholders, action paths,
+are checked before exposing data. Staff/admin views in student operations, timed-start placeholders, action paths,
 and nonmember roster data are excluded. Published-score and prior-score flags are respected.
 Hidden autograder debug output, unreleased reference answers/explanations, and hidden/unapplied
 rubric items are filtered according to the student's visibility flags.
@@ -59,3 +59,15 @@ Explicit live verification saves private results in `.local/`, separately from s
 Git ignore rules and pre-commit secret scan block `.env`, `.local`, `.venv`, and configured
 credential bytes (including common encodings) from staged changes. Synthetic fixtures are used
 for committed tests. Verification requires no hosted service or OpenAI API billing credential.
+
+## Staff reads and change state
+
+Staff operations separately require fresh instructor/TA course discovery, dashboard assignment
+discovery, and queue membership before a selected conversation read. They return only existing
+queue metadata and that question's regrade conversation, without other students' work,
+identities from submission ownerships, or grader UI action paths. Anonymous queue labels are
+preserved. The ordinary student ownership and unpublished-feedback gates are unchanged.
+
+Change feeds write owner-only local comparison state, never upstream course state. They
+reauthorize course membership before returning cached pages, isolate role/account cursors,
+and explicitly retain unknown/missing records on errors. See change-feed.md for retention.

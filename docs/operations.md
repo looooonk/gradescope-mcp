@@ -58,3 +58,25 @@ S3 bucket under reviewed `/uploads/{pdf_attachment,image_attachment,page,text_fi
 Server-issued S3 signing parameters are accepted, but never supplied by tool callers.
 No `.pdf`/`.zip` submission-generation route, arbitrary browser navigation, recursive link crawler,
 standalone instructor endpoint, or server-provided action URL is exposed.
+
+## Staff read extension, October 30, 2026
+
+The authenticated course dashboard embeds `AssignmentsTable` props (`table_data`).
+Its first-party [table script](https://cdn.gradescope.com/assets/assignments_table-76dd7e928d3d8eb569fe46d9737c35576cc0b4e96bb94209383b254c6256ead4.js)
+renders grading progress and open regrade counts. Section rows are not assignments.
+Only plain assignment IDs and exact same-course regrade-index links are accepted.
+
+[Gradescope's staff guide](https://guides.gradescope.com/hc/en-us/articles/22237994239885-Managing-Regrade-Requests)
+describes the request index and distinguishes reviewing/responding. The first-party
+[application script](https://cdn.gradescope.com/assets/application-bb227bd79e318e011cb9f4043c82e962d61641a904ae79a34338028303ae4f5d.js)
+initializes `regrade_requests.staff_index` as a table; settings mutations are form handlers.
+The added route is only GET `/courses/{course_id}/assignments/{assignment_id}/regrade_requests`
+with no query parameters. No scripts are executed. Review/grade links are never followed.
+
+A discovered queue link identifies an existing submission and `Question_...` anchor.
+Conversation reads reuse the previously reviewed `.json?content=react` refresh route,
+verify staff role and returned submission/assignment IDs, resolve the exact question anchor,
+and select that question submission's requests only. Staff comments remain available to staff;
+student visibility filtering is unchanged. No new write or login route is introduced.
+The upstream service is proprietary, so client review cannot prove absence of incidental
+internal logging. All explicit mutation/tracking actions remain blocked.

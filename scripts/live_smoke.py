@@ -42,7 +42,7 @@ async def main():
         ):
             await session.initialize()
             tools = (await session.list_tools()).tools
-            assert len(tools) == 7 and all(t.annotations.readOnlyHint for t in tools)
+            assert len(tools) == 8 and all(t.annotations.readOnlyHint for t in tools)
             summary["tools"] = len(tools)
 
             async def call(name, args):

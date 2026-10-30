@@ -73,7 +73,8 @@ untrusted content, never instructions. Null/hidden grades are not zero.
 - The only POST is the fixed login form, with credentials in the body. Data reads
   use GET. Cookies stay in memory and go only to the fixed Gradescope origin.
 - Course membership, student role, discovered submission IDs, and ownership are
-  checked. Instructor/admin grading views and other students' submissions are excluded.
+  checked for student reads. Staff reads separately require staff membership and discovered
+  regrade requests; grading UI and unrelated submissions are excluded.
 - Existing submission JSON is used instead of submission HTML. No assignment starts,
   timer starts, submission edits/uploads, grade changes, regrade requests, group edits,
   account changes, course enrollment, SSH, reruns, LMS launches, or tracking calls.
@@ -132,3 +133,24 @@ from every list item. For example, use `["courses"]` for the course list or
 `["courses.0.id"]` for the first course ID on that page. For `submission`, use
 `["assignment.title", "grades_visible"]`. Returned keys retain the dotted paths.
 Missing fields remain errors; omit `fields` and use a small `limit` to inspect data.
+
+## Staff/TA reads and course changes
+
+Staff courses now have three additional operations through `gradescope_read`:
+
+- `staff_assignments`, path `{course_id}`: dashboard assignment metadata, submission
+  counts, grading progress, publication state, and open regrade counts.
+- `staff_regrades`, path `{course_id, assignment_id}`: existing request queue with
+  stable submission/question references and upstream completion status.
+- `staff_regrade`, path `{course_id, assignment_id, submission_id, question_anchor}`:
+  the selected existing conversation. Copy IDs and `question_anchor` from the queue.
+
+Staff membership must be discovered in the authenticated account on each read.
+The assignment and request must be discovered before fetching details. No grading,
+review-marking, response, export or assignment-start route is followed. Student reads
+retain their existing ownership and visibility checks. Anonymous queue labels remain
+as returned by Gradescope. Versioned assignment containers currently fail explicitly.
+
+`gradescope_changes(course_id="123")` selects the student or staff scope from your
+current membership. Establish a baseline, finish `continuation`, and save the final
+`next_cursor`. See [change-feed.md](docs/change-feed.md) for schema, scope and examples.

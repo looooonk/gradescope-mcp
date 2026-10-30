@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 import httpx
 from bs4 import BeautifulSoup
 
-from gradescope_mcp import parsers
+from gradescope_mcp import parsers, staff
 from gradescope_mcp.catalog import GradescopeError, validate, validate_request
 from gradescope_mcp.config import ORIGIN, Settings, tls_context
 
@@ -152,6 +152,15 @@ class GradescopeClient:
             )
         return course
 
+    async def _staff_assignments(self, course_id):
+        self.cache.pop("courses", None)
+        course = next((c for c in (await self._courses())["courses"] if c["id"] == course_id), None)
+        if course is None or course["role"] != "instructor":
+            raise GradescopeError(
+                "Staff membership is required for this read.", "staff_access_required"
+            )
+        return staff.assignments(await self._get(f"/courses/{course_id}"), course_id)
+
     async def _assignments(self, course_id):
         await self._course(course_id)
         return parsers.assignments(await self._get(f"/courses/{course_id}"), course_id)
@@ -200,7 +209,42 @@ class GradescopeClient:
     async def read(self, operation, path=None):
         path = validate(operation, path)
         source = ORIGIN + "/account"
-        if operation == "courses":
+        if operation in {"staff_assignments", "staff_regrades", "staff_regrade"}:
+            data = await self._staff_assignments(path["course_id"])
+            source = ORIGIN + f"/courses/{path['course_id']}"
+            if operation in {"staff_regrades", "staff_regrade"}:
+                assignment = next(
+                    (a for a in data["assignments"] if a["id"] == path["assignment_id"]), None
+                )
+                if not assignment or not assignment["regrades_available"]:
+                    raise GradescopeError(
+                        "Regrade index was not discovered for this assignment.", "not_discovered"
+                    )
+                route = (
+                    f"/courses/{path['course_id']}/assignments/{path['assignment_id']}"
+                    "/regrade_requests"
+                )
+                data = staff.regrades(
+                    await self._get(route), path["course_id"], path["assignment_id"]
+                )
+                source = ORIGIN + route
+                if operation == "staff_regrade":
+                    if not any(
+                        r["submission_id"] == path["submission_id"]
+                        and r["question_anchor"] == path["question_anchor"]
+                        for r in data["regrade_requests"]
+                    ):
+                        raise GradescopeError(
+                            "Request was not discovered in the staff queue.", "not_discovered"
+                        )
+                    base = f"/courses/{path['course_id']}/assignments/{path['assignment_id']}"
+                    raw = parsers.parse_json(
+                        await self._get(
+                            base + f"/submissions/{path['submission_id']}.json", react=True
+                        )
+                    )
+                    data = staff.request_detail(raw, path)
+        elif operation == "courses":
             data = await self._courses()
         elif operation == "profile":
             source += "/edit"

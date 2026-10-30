@@ -22,6 +22,21 @@ COURSE = ("course_id",)
 ASSIGNMENT = (*COURSE, "assignment_id")
 SUBMISSION = ("submission_id",)
 OPERATIONS = {
+    "staff_assignments": Operation(
+        "Staff/TA assignment grading progress and open regrade counts",
+        COURSE,
+        collection="assignments",
+    ),
+    "staff_regrades": Operation(
+        "Staff/TA existing regrade request queue; never marks reviewed",
+        ASSIGNMENT,
+        collection="regrade_requests",
+    ),
+    "staff_regrade": Operation(
+        "Read an existing staff regrade conversation discovered in staff_regrades",
+        (*ASSIGNMENT, "submission_id", "question_anchor"),
+        collection="regrade_requests",
+    ),
     "profile": Operation("Your account name, email, institution and timezone; no account edits"),
     "courses": Operation("All enrolled course names, terms and roles", collection="courses"),
     "course": Operation("Student course metadata and assignment counts", COURSE),
@@ -82,7 +97,8 @@ def describe(name):
         "operation": name,
         **asdict(OPERATIONS[name]),
         "notes": (
-            "Student courses and your discovered submissions only. Omit submission_id "
+            "Student reads require student membership; staff_* reads require "
+            "discovered staff membership. Omit submission_id "
             "for the current attempt; submission_history discovers older attempts. Null grades "
             "are not zero. No arbitrary query parameters. offset/limit paginate locally."
         ),
@@ -100,6 +116,15 @@ def validate(name, path=None):
         raise GradescopeError("Required path parameters are missing.")
     result = {}
     for key, value in path.items():
+        if key == "question_anchor":
+            if (
+                not isinstance(value, str)
+                or not re.fullmatch(r"Question_[1-9][0-9]*(?:[._][0-9]+)*", value)
+                or len(value) > 100
+            ):
+                raise GradescopeError("Use the question_anchor returned by staff_regrades.")
+            result[key] = value
+            continue
         if type(value) not in (int, str) or not re.fullmatch(r"[1-9][0-9]{0,19}", str(value)):
             raise GradescopeError("IDs must be positive decimal integers or decimal strings.")
         result[key] = str(value)
@@ -111,6 +136,7 @@ def validate_request(method, route, params=None):
         r"/",
         r"/account(?:/edit)?",
         r"/courses/[1-9][0-9]*",
+        r"/courses/[1-9][0-9]*/assignments/[1-9][0-9]*/regrade_requests",
         r"/courses/[1-9][0-9]*/assignments/[1-9][0-9]*/submissions/[1-9][0-9]*\.json",
     )
     if method == "POST" and route == "/login" and not params:

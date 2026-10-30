@@ -68,3 +68,13 @@ are not rewritten. Run the Codex check with `--model gpt-6-luna`.
 The September 25, 2026 fresh GPT-6 Luna check passed with 19 MCP calls,
 using the command registered in Codex. Offline checks passed with
 46 tests. Operational log contents remained unchanged throughout verification.
+
+## Version 0.2.0 validation, October 30, 2026
+
+Ruff check and format checks passed; the offline synthetic suite passed 66 tests.
+New tests cover baseline/resume/replay, change pagination, scope/role/expiry isolation,
+partial failure retention, deadline updates, noise normalization and read-only boundaries.
+Explicit live staff dashboard/index reads and the selected conversation parser were
+validated without following Review/grade links or making a regrade mutation.
+Deployment and Mac session results are reported separately; these test results alone
+do not establish a deployed cloud version or a physical Mac-off test.

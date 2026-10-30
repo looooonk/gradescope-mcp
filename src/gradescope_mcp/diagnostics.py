@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from gradescope_mcp.catalog import OPERATIONS, GradescopeError
 
 TOOL_NAMES = {
+    "gradescope_changes",
     "gradescope_find_operations",
     "gradescope_describe_operation",
     "gradescope_read",

@@ -112,7 +112,7 @@ async def test_tools_strict_arguments_safe_errors_and_logged_failures(tmp_path):
     client = Stub()
     server = create_server(Settings("test@example.test", "secret"), tmp_path, client=client)
     tools = await server.list_tools()
-    assert len(tools) == 7
+    assert len(tools) == 8
     assert all(t.annotations.readOnlyHint and not t.annotations.destructiveHint for t in tools)
     for arguments in [
         {"operation": "courses", "url": "private"},

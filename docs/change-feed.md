@@ -1,4 +1,4 @@
-# Course change feed (schema version 1)
+# Course change feed (schema version 2)
 
 Call `gradescope_changes(course_id="123")` once per course to capture a baseline.
 The baseline emits no historical alerts. If `continuation` is present, call again with
@@ -33,7 +33,7 @@ in the campus system. These feeds do not schedule notifications on their own.
 
 | Field | Meaning |
 | --- | --- |
-| `schema_version` | Currently 1; normalization/coverage changes require a new version/baseline |
+| `schema_version` | Currently 2; normalization/coverage changes require a new version/baseline |
 | `status` | `scanning`, `baseline`, or `changes` |
 | `baseline` | True throughout the initial scan; no assertion about historical creation |
 | `changes` | Compact events on this result page; empty while scanning |
@@ -112,3 +112,8 @@ cursors. Do not copy these databases into GitHub or verification reports.
 The `changefeed.py` engine is intentionally vendored identically in all three small standalone
 repositories to keep installation independent. Apply protocol changes and its synthetic tests
 to all three together; compare file hashes during release.
+
+Schema 2 preserves nested content fields and array ordering. Only recognized authentication
+parameters in URL fields are normalized; semantic query values (such as object versions)
+remain part of comparisons. Repeated pagination pages make coverage explicitly partial.
+Schema 1 cursors require a new baseline.

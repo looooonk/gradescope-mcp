@@ -78,3 +78,13 @@ Explicit live staff dashboard/index reads and the selected conversation parser w
 validated without following Review/grade links or making a regrade mutation.
 Deployment and Mac session results are reported separately; these test results alone
 do not establish a deployed cloud version or a physical Mac-off test.
+
+## Version 0.2.1 review
+
+The shared schema-2 feed preserves nested content fields and array order, strips
+only known URL authentication parameters, reports pagination cycles as partial,
+counts failed tasks toward scan limits, closes SQLite connections, and bounds
+cached responses as well as inserts. Regression tests cover content reorder,
+semantic URL versions, partial-page recovery, failed-task limits and reply size.
+`ruff check`, `ruff format --check` and all 69 tests passed on Python 3.12.
+No campus mutation probes were used.

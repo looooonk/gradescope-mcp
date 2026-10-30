@@ -136,19 +136,64 @@ def test_large_content_is_hashed_not_persisted():
     assert "private work" not in json.dumps(result)
 
 
-def test_signed_url_rotation_and_reply_order_do_not_create_noise():
+def test_signed_url_rotation_preserves_version_and_arbitrary_content():
     from gradescope_mcp.changefeed import canonical
 
-    left = {
-        "comments": [
-            {"id": 2, "url": "https://storage.example/file?X-Amz-Signature=old"},
-            {"id": 1, "content": "hello"},
-        ]
-    }
-    right = {
-        "comments": [
-            {"id": 1, "content": "hello"},
-            {"id": 2, "url": "https://storage.example/file?X-Amz-Signature=new"},
-        ]
-    }
-    assert canonical(left) == canonical(right)
+    def url(signature, version):
+        return f"https://storage.example/file?X-Amz-Signature={signature}&versionId={version}"
+
+    assert canonical({"url": url("old", "1")}) == canonical({"url": url("new", "1")})
+    assert canonical({"url": url("old", "1")}) != canonical({"url": url("new", "2")})
+    assert canonical({"content": url("old", "1")}) != canonical({"content": url("new", "1")})
+    left = {"document": [{"id": 1, "read": "a"}, {"id": 2, "read": "b"}]}
+    assert canonical(left) != canonical({"document": list(reversed(left["document"]))})
+    assert canonical({"results": {"read": 1}}) != canonical({"results": {"read": 2}})
+
+
+async def test_pagination_cycle_is_partial_and_failed_page_recovers(tmp_path):
+    class Pages(Adapter):
+        def tasks(self, course, role):
+            return [{"source": "items", "cursor": None}]
+
+        async def collect(self, client, course, task):
+            if task["cursor"] is None:
+                return self.rows, [{"source": "items", "cursor": "second"}]
+            if self.fail:
+                raise FeedError("unavailable page")
+            return [], [task]
+
+    a = Pages()
+    feed = ChangeFeed(tmp_path, "account", a)
+    baseline = await complete(feed)
+    assert baseline["coverage"]["status"] == "partial"
+    assert baseline["coverage"]["failures"][0]["code"] == "pagination_cycle"
+    a.fail = True
+    partial = await complete(feed, cursor=baseline["next_cursor"])
+    assert partial["changes"] == []
+    assert partial["coverage"]["failure_count"] == 1
+    a.fail = False
+    a.rows[0]["fields"]["due_at"] = "Friday"
+    recovered = await complete(feed, cursor=partial["next_cursor"])
+    assert recovered["changes"][0]["change"] == "updated"
+
+
+async def test_failed_tasks_still_obey_scan_limit(tmp_path, monkeypatch):
+    import gradescope_mcp.changefeed as engine
+
+    monkeypatch.setattr(engine, "MAX_RECORDS", 1)
+    a = Adapter()
+    a.fail = True
+    with pytest.raises(FeedError, match="scan limit"):
+        await complete(ChangeFeed(tmp_path, "account", a))
+
+
+def test_cached_reply_obeys_storage_bound(tmp_path, monkeypatch):
+    import gradescope_mcp.changefeed as engine
+
+    store = engine.Store(tmp_path)
+    with store.open() as db:
+        token = store.put(db, "scope", "scan", {"small": True})
+        monkeypatch.setattr(engine, "MAX_BYTES", 50)
+        with pytest.raises(FeedError, match="state limit"):
+            store.reply(db, token, {"small": True}, {"large": "x" * 100})
+        assert store.get(db, "scope", token, "scan") == {"small": True}

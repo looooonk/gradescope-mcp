@@ -11,12 +11,12 @@ import re
 import secrets
 import sqlite3
 import time
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import parse_qsl, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-VERSION = 1
+VERSION = 2
 RETENTION = 7 * 86400
 MAX_RECORDS = 20000
 MAX_BYTES = 32 * 1024 * 1024
@@ -36,23 +36,39 @@ def now():
     return datetime.now(UTC).isoformat()
 
 
-def canonical(value):
+def canonical(value, field=None):
+    """Preserve arbitrary content and order; strip only URL authentication churn."""
     if isinstance(value, dict):
-        return {
-            k: canonical(v)
-            for k, v in sorted(value.items())
-            if k not in {"avatar_image_url", "thumbnail_url", "read_state", "read", "view_count"}
-        }
+        return {k: canonical(v, k) for k, v in sorted(value.items())}
     if isinstance(value, list):
-        items = [canonical(v) for v in value]
-        if items and all(isinstance(v, dict) and v.get("id") is not None for v in items):
-            items.sort(key=lambda v: str(v["id"]))
-        return items
-    if isinstance(value, str) and value.startswith("https://"):
+        return [canonical(v) for v in value]
+    if (
+        isinstance(value, str)
+        and value.startswith("https://")
+        and isinstance(field, str)
+        and (field == "url" or field.endswith("_url"))
+    ):
         url = urlsplit(value)
-        keys = {k.lower() for k, _ in parse_qsl(url.query)}
-        if keys & {"x-amz-signature", "signature", "verifier", "sf_verifier"}:
-            return urlunsplit(url._replace(query=""))
+        query = parse_qsl(url.query, keep_blank_values=True)
+        keys = {k.lower() for k, _ in query}
+        auth = {"verifier", "sf_verifier"}
+        if "x-amz-signature" in keys:
+            auth.update(
+                {
+                    "x-amz-signature",
+                    "x-amz-algorithm",
+                    "x-amz-credential",
+                    "x-amz-date",
+                    "x-amz-expires",
+                    "x-amz-signedheaders",
+                    "x-amz-security-token",
+                }
+            )
+        if "signature" in keys:
+            auth.update({"signature", "expires", "awsaccesskeyid", "key-pair-id", "policy"})
+        if keys & auth:
+            query = [(k, v) for k, v in query if k.lower() not in auth]
+            return urlunsplit(url._replace(query=urlencode(query)))
     return value
 
 
@@ -98,7 +114,7 @@ class Store:
             fd = os.open(path, flags, 0o600)
             os.close(fd)
             os.chmod(path, 0o600)
-            with sqlite3.connect(path) as db:
+            with closing(sqlite3.connect(path)) as db, db:
                 db.execute("PRAGMA journal_mode=MEMORY")
                 db.execute(
                     "CREATE TABLE IF NOT EXISTS objects "
@@ -108,15 +124,23 @@ class Store:
                 db.commit()
                 yield db
 
-    def put(self, db, scope, kind, value):
+    def encode(self, db, value, replacing=None):
         raw = json.dumps(value, separators=(",", ":"))
-        if len(raw.encode()) > MAX_BYTES:
+        length = len(raw.encode())
+        if length > MAX_BYTES:
             raise FeedError("Change scan exceeds the local state limit; cursor was not advanced.")
-        size = db.execute("SELECT COALESCE(SUM(LENGTH(value)),0) FROM objects").fetchone()[0]
-        if size + len(raw) > 256 * 1024 * 1024:
+        size = db.execute(
+            "SELECT COALESCE(SUM(LENGTH(CAST(value AS BLOB))),0) FROM objects WHERE id != ?",
+            (replacing or "",),
+        ).fetchone()[0]
+        if size + length > 256 * 1024 * 1024:
             raise FeedError(
                 "Change state is full. Wait for seven-day expiry or remove local feed state."
             )
+        return raw
+
+    def put(self, db, scope, kind, value):
+        raw = self.encode(db, value)
         token = {"snapshot": "chg_", "scan": "scan_", "events": "page_"}[
             kind
         ] + secrets.token_urlsafe(24)
@@ -139,7 +163,8 @@ class Store:
 
     def reply(self, db, token, value, result):
         value["reply"] = result
-        db.execute("UPDATE objects SET value=? WHERE id=?", (json.dumps(value), token))
+        raw = self.encode(db, value, replacing=token)
+        db.execute("UPDATE objects SET value=? WHERE id=?", (raw, token))
         db.commit()
 
 
@@ -200,8 +225,19 @@ class ChangeFeed:
                 task = state["queue"].pop(0)
                 key = digest(task)
                 if key in state["seen_tasks"]:
+                    if "cursor" in task or "offset" in task:
+                        state["failures"].append(
+                            {
+                                "source": task["source"],
+                                "code": "pagination_cycle",
+                                "http_status": None,
+                                "meaning": "Repeated page; incomplete coverage. No deletion.",
+                            }
+                        )
                     continue
                 state["seen_tasks"].append(key)
+                if len(state["seen_tasks"]) > MAX_RECORDS:
+                    raise FeedError("Course exceeds the scan limit; no change cursor was advanced.")
                 try:
                     records, more = await self.adapter.collect(client, course_id, task)
                 except self.adapter.errors as error:
@@ -217,7 +253,7 @@ class ChangeFeed:
                     continue
                 for item in records:
                     state["records"][item["key"]] = item
-                if len(state["records"]) > MAX_RECORDS or len(state["seen_tasks"]) > MAX_RECORDS:
+                if len(state["records"]) > MAX_RECORDS:
                     raise FeedError("Course exceeds the scan limit; no change cursor was advanced.")
                 state["queue"].extend(more)
                 if len(state["queue"]) > MAX_RECORDS:

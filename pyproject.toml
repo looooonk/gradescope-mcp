@@ -1,6 +1,6 @@
 [project]
 name = "gradescope-mcp"
-version = "0.2.1"
+version = "0.2.2"
 description = "Personal, local, read-only Gradescope MCP for Codex"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

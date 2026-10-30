@@ -11,6 +11,7 @@ from mcp.server.fastmcp import Context
 from mcp.types import ImageContent, TextContent, ToolAnnotations
 from pydantic import Field
 
+from gradescope_mcp import feed_operation
 from gradescope_mcp.catalog import OPERATIONS, GradescopeError, describe, validate
 from gradescope_mcp.changefeed import ChangeFeed, FeedError, digest
 from gradescope_mcp.changes import GradescopeChanges
@@ -54,6 +55,11 @@ GUIDE += (
     "follow continuation, then save next_cursor. Coverage is explicit "
     "and incomplete reads never imply deletion. See docs/change-"
     "feed.md.\n"
+)
+GUIDE += (
+    '\nExisting clients can use gradescope_read(operation="changes", '
+    'path={"course_id":"123","feed":{"budget":1}}). Describe changes for cursor semantics. '
+    "The full feed is returned in data; do not apply API pagination or field projections.\n"
 )
 READ_ONLY = ToolAnnotations(
     readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
@@ -139,21 +145,25 @@ def create_server(settings, log_dir, *, client=None):
         try:
             return await feed.read(connection(ctx), course_id, cursor, continuation, limit, budget)
         except FeedError as error:
-            raise GradescopeError(str(error)) from error
+            raise GradescopeError(str(error)) from None
 
     @mcp.tool(annotations=READ_ONLY)
     def gradescope_find_operations(search: str = "") -> dict[str, Any]:
         """Find read-only Gradescope capabilities by keyword; empty search lists all operations."""
         words = search.casefold().split()
+        summaries = {name: op.summary for name, op in OPERATIONS.items()}
+        summaries["changes"] = feed_operation.SUMMARY
         return {
-            name: op.summary
-            for name, op in OPERATIONS.items()
-            if all(w in (name + " " + op.summary).casefold() for w in words)
+            name: summary
+            for name, summary in summaries.items()
+            if all(w in (name + " " + summary).casefold() for w in words)
         }
 
     @mcp.tool(annotations=READ_ONLY)
     def gradescope_describe_operation(operation: str) -> dict[str, Any]:
         """Get required/optional IDs, pagination collection, caveats and operation evidence."""
+        if operation == "changes":
+            return feed_operation.describe("gradescope", GradescopeChanges.coverage)
         return describe(operation)
 
     @mcp.tool(annotations=READ_ONLY)
@@ -174,6 +184,16 @@ def create_server(settings, log_dir, *, client=None):
         IDs are strings or integers. path accepts only the described keys. No arbitrary endpoints.
         For unstarted assignments only course-list metadata is available. Grades may be null.
         """
+        if operation == "changes":
+            try:
+                if offset != 0 or limit != 50 or fields is not None:
+                    raise FeedError(
+                        "changes options belong in path.feed; omit offset/limit/fields."
+                    )
+                result = await gradescope_changes(ctx=ctx, **feed_operation.arguments(path))
+                return feed_operation.envelope(result)
+            except FeedError as error:
+                raise GradescopeError(str(error)) from None
         validate(operation, path)
         validate_output_args(offset, limit, fields)
         key = OPERATIONS[operation].collection
@@ -273,7 +293,10 @@ def create_server(settings, log_dir, *, client=None):
 
     @mcp.resource("gradescope://operations", mime_type="application/json")
     def operations() -> str:
-        return json.dumps({name: describe(name) for name in OPERATIONS})
+        return json.dumps(
+            {name: describe(name) for name in OPERATIONS}
+            | {"changes": feed_operation.describe("gradescope", GradescopeChanges.coverage)}
+        )
 
     return mcp
 

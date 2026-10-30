@@ -1,0 +1,80 @@
+{
+  "gradescope_find_operations": {
+    "properties": {
+      "search": {
+        "default": "",
+        "title": "Search",
+        "type": "string"
+      }
+    },
+    "title": "gradescope_find_operationsArguments",
+    "type": "object"
+  },
+  "gradescope_describe_operation": {
+    "properties": {
+      "operation": {
+        "title": "Operation",
+        "type": "string"
+      }
+    },
+    "required": [
+      "operation"
+    ],
+    "title": "gradescope_describe_operationArguments",
+    "type": "object"
+  },
+  "gradescope_read": {
+    "properties": {
+      "operation": {
+        "title": "Operation",
+        "type": "string"
+      },
+      "path": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Path"
+      },
+      "offset": {
+        "default": 0,
+        "minimum": 0,
+        "title": "Offset",
+        "type": "integer"
+      },
+      "limit": {
+        "default": 50,
+        "maximum": 100,
+        "minimum": 1,
+        "title": "Limit",
+        "type": "integer"
+      },
+      "fields": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Fields"
+      }
+    },
+    "required": [
+      "operation"
+    ],
+    "title": "gradescope_readArguments",
+    "type": "object"
+  }
+}

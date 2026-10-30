@@ -80,3 +80,8 @@ and select that question submission's requests only. Staff comments remain avail
 student visibility filtering is unchanged. No new write or login route is introduced.
 The upstream service is proprietary, so client review cannot prove absence of incidental
 internal logging. All explicit mutation/tracking actions remain blocked.
+
+The `changes` operation is local snapshot reconciliation exposed through the existing read
+wrapper; it is deliberately absent from the HTTP route catalog. Its arguments are validated
+before authorization and campus reads. It delegates only to the same reviewed adapters as
+the dedicated feed tool, adding no upstream routes or methods. See `docs/change-feed.md`.

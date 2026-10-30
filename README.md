@@ -154,3 +154,7 @@ as returned by Gradescope. Versioned assignment containers currently fail explic
 `gradescope_changes(course_id="123")` selects the student or staff scope from your
 current membership. Establish a baseline, finish `continuation`, and save the final
 `next_cursor`. See [change-feed.md](docs/change-feed.md) for schema, scope and examples.
+
+Clients with cached tool lists can use `gradescope_read(operation="changes",
+path={"course_id":"123","feed":{"budget":1}})`. Discover/describe the `changes`
+operation for baseline, continuation and checkpoint semantics. The complete feed is in `data`.

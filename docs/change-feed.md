@@ -29,6 +29,52 @@ Keep a separate checkpoint per course and per consumer. Two consumers may use th
 checkpoint independently; reading a feed does not acknowledge, mark read, or consume anything
 in the campus system. These feeds do not schedule notifications on their own.
 
+## Using existing read tools
+
+Clients with cached tool catalogs can use the named local operation `changes` through the
+existing find/describe/read tools. No tool signatures or upstream routes are changed.
+Use `gradescope_find_operations(search="changes")`, then
+`gradescope_describe_operation(operation="changes")` for the complete contract.
+
+```python
+response = await gradescope_read(
+    operation="changes",
+    path={"course_id": "123", "feed": {"budget": 1}},
+)
+result = response["data"]
+while result["continuation"]:
+    response = await gradescope_read(
+        operation="changes",
+        path={"course_id": "123", "feed": {"continuation": result["continuation"]}},
+    )
+    result = response["data"]
+checkpoint = result["next_cursor"]
+
+# Later: process every result page before saving the next checkpoint.
+response = await gradescope_read(
+    operation="changes",
+    path={"course_id": "123", "feed": {"cursor": checkpoint}},
+)
+```
+
+The existing `path` dictionary carries local operation arguments, not a new campus URL.
+`path.course_id` is required. Optional `path.feed` accepts only `cursor`, `continuation`,
+`limit` (1-100, default 30), and `budget` (1-20, default 10). Its values pass the same strict
+validation as the dedicated tool. The result has the normal read envelope
+`{"operation":"changes", "data": <full feed result>, "untrusted_content": true}`.
+Nothing projects, compacts or slices `data`: coverage and cursor metadata always survive.
+
+Keep ordinary wrapper options omitted: no API query/pagination cursor, `fields`, or nonzero
+`offset`. Gradescope's outer `limit` must remain its existing default 50; set event page size
+inside `path.feed.limit`. Ed's `compact` value has no effect on feeds. Nondefault conflicting
+wrapper options are rejected before any campus read. Empty query objects are harmless.
+
+The wrapper and dedicated tool share the same state and cursors on the same server. You may
+resume a wrapper scan with the dedicated tool or vice versa, but must still use the same
+course/account/role. Existing schema-2 checkpoints remain valid after this wrapper update.
+For later polls, process `response.data.changes` and follow `response.data.continuation` until
+null, then save `response.data.next_cursor`; never use ordinary list pagination for this operation.
+
 ## Result contract
 
 | Field | Meaning |

@@ -88,3 +88,12 @@ cached responses as well as inserts. Regression tests cover content reorder,
 semantic URL versions, partial-page recovery, failed-task limits and reply size.
 `ruff check`, `ruff format --check` and all 69 tests passed on Python 3.12.
 No campus mutation probes were used.
+
+## Version 0.2.2 compatibility
+
+All 88 tests, ruff checks and formatting checks pass. The existing find/describe/read
+input schemas are compared against the prior installed release. Synthetic tests verify
+wrapper/dedicated cursor interoperability, event pagination and replay, role isolation,
+partial coverage, rejection of projection/pagination conflicts, malformed nested options
+before reads, and rejection of this local operation by upstream HTTP clients.
+Feed errors now retain their safe actionable message through tool error handling.
